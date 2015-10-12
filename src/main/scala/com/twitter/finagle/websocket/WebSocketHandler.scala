@@ -214,10 +214,9 @@ class WebSocketClientHandler extends WebSocketHandler {
 
             // initiate the keep-alive
             for(interval <- sock.keepAlive) {
-              timer.schedule(interval) {
+              keepAliveTask = Option(timer.schedule(interval) {
                 ctx.getChannel.write(new PingWebSocketFrame())
-              }
-
+              })
             }
 
             e.getFuture.setSuccess()
