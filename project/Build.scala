@@ -56,4 +56,13 @@ object FinagleWebsocket extends Build {
       buildSettings ++
       publishSettings
   ).configs(IntegrationTest)
+
+  lazy val examples = Project(
+    id = "finagle-websocket-examples",
+    base = file("examples"),
+    settings =
+      baseSettings ++
+      buildSettings
+  ).dependsOn(finagleWebsocket)
+
 }
