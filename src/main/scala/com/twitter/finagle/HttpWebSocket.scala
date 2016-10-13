@@ -15,21 +15,23 @@ import org.jboss.netty.channel.Channel
 
 trait WebSocketRichClient { self: Client[WebSocket, WebSocket] =>
   def open(out: Offer[String], uri: String): Future[WebSocket] =
-    open(out, Offer.never, new URI(uri))
+    open(out, Offer.never, Offer.never, new URI(uri))
 
   def open(out: Offer[String], uri: URI): Future[WebSocket] =
-    open(out, Offer.never, uri)
+    open(out, Offer.never, Offer.never, uri)
 
   def open(out: Offer[String], binaryOut: Offer[Array[Byte]], uri: String): Future[WebSocket] =
-    open(out, binaryOut, new URI(uri))
+    open(out, binaryOut, Offer.never, new URI(uri))
 
   def open(out: Offer[String], binaryOut: Offer[Array[Byte]], uri: String, keepAlive: Option[Duration]): Future[WebSocket] =
-    open(out, binaryOut, new URI(uri), keepAlive = keepAlive)
+    open(out, binaryOut, Offer.never, new URI(uri), keepAlive = keepAlive)
 
-  def open(out: Offer[String], binaryOut: Offer[Array[Byte]], uri: URI, keepAlive: Option[Duration] = None): Future[WebSocket] = {
+  def open(out: Offer[String], binaryOut: Offer[Array[Byte]], pingOut: Offer[Array[Byte]],
+    uri: URI, keepAlive: Option[Duration] = None): Future[WebSocket] = {
     val socket = WebSocket(
       messages = out,
       binaryMessages = binaryOut,
+      pings = pingOut,
       uri = uri,
       keepAlive = keepAlive)
     val addr = uri.getHost + ":" + uri.getPort

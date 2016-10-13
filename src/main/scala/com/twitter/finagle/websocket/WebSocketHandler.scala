@@ -14,6 +14,7 @@ import scala.collection.JavaConversions._
 class WebSocketHandler extends SimpleChannelHandler {
   protected[this] val messagesBroker = new Broker[String]
   protected[this] val binaryMessagesBroker = new Broker[Array[Byte]]
+  protected[this] val pingsBroker = new Broker[Array[Byte]]
   protected[this] val closer = new Promise[Unit]
   protected[this] val timer = DefaultTimer.twitter
 
@@ -103,6 +104,7 @@ class WebSocketServerHandler extends WebSocketHandler {
             val webSocket = WebSocket(
               messages = messagesBroker.recv,
               binaryMessages = binaryMessagesBroker.recv,
+              pings = pingsBroker.recv,
               uri = new URI(req.getUri),
               headers = req.headers.map(e => e.getKey -> e.getValue).toMap,
               remoteAddress = ctx.getChannel.getRemoteAddress,
@@ -116,6 +118,11 @@ class WebSocketServerHandler extends WebSocketHandler {
         handshaker foreach { _.close(ctx.getChannel, frame) }
 
       case frame: PingWebSocketFrame =>
+        val ch = ctx.getChannel
+        ch.setReadable(false)
+        (pingsBroker ! frame.getBinaryData.array) ensure { ch.setReadable(true) }
+
+        // echo back the binary data directly as a pong
         ctx.getChannel.write(new PongWebSocketFrame(frame.getBinaryData))
 
       case frame: TextWebSocketFrame =>
@@ -205,6 +212,7 @@ class WebSocketClientHandler extends WebSocketHandler {
         val webSocket = sock.copy(
           messages = messagesBroker.recv,
           binaryMessages = binaryMessagesBroker.recv,
+          pings = pingsBroker.recv,
           onClose = closer,
           close = close)
 

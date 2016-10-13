@@ -11,6 +11,7 @@ import java.net.SocketAddress
 case class WebSocket(
   messages: Offer[String],
   binaryMessages: Offer[Array[Byte]],
+  pings: Offer[Array[Byte]],
   uri: URI,
   headers: Map[String, String] = Map.empty[String, String],
   remoteAddress: SocketAddress = new SocketAddress {},
