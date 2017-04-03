@@ -6,7 +6,9 @@ import com.twitter.finagle.dispatch.{SerialServerDispatcher, SerialClientDispatc
 import com.twitter.finagle.netty3._
 import com.twitter.finagle.param.{ProtocolLibrary, Stats, Label}
 import com.twitter.finagle.server._
-import com.twitter.finagle.ssl.Ssl
+import com.twitter.finagle.ssl.TrustCredentials
+import com.twitter.finagle.ssl.client.SslClientConfiguration
+import com.twitter.finagle.ssl.server.SslServerConfiguration
 import com.twitter.finagle.transport.Transport
 import com.twitter.concurrent.Offer
 import com.twitter.util.{Duration, Future}
@@ -57,7 +59,7 @@ extends StdStackClient[WebSocket, WebSocket, WebSocketClient] {
   protected type In = WebSocket
   protected type Out = WebSocket
 
-  protected def newTransporter(): Transporter[WebSocket, WebSocket] = {
+  protected def newTransporter(addr: SocketAddress): Transporter[WebSocket, WebSocket] = {
     val Label(label) = params[Label]
     val Stats(stats) = params[Stats]
     val codec = WebSocketCodec()
@@ -66,6 +68,7 @@ extends StdStackClient[WebSocket, WebSocket, WebSocketClient] {
 
     Netty3Transporter(
       codec.pipelineFactory,
+      addr,
       params + Netty3Transporter.TransportFactory(newTransport))
   }
 
@@ -78,10 +81,13 @@ extends StdStackClient[WebSocket, WebSocket, WebSocketClient] {
     new SerialClientDispatcher(transport)
 
   def withTlsWithoutValidation(): WebSocketClient =
-    configured(Transport.TLSClientEngine(Some({
+    configured(Transport.ClientSsl(
+      Some(SslClientConfiguration(trustCredentials = TrustCredentials.Insecure))))
+
+/*    configured(Transport.TLSClientEngine(Some({
       case inet: InetSocketAddress => Ssl.clientWithoutCertificateValidation(inet.getHostName, inet.getPort)
       case _ => Ssl.clientWithoutCertificateValidation()
-    })))
+    }))) */
 }
 
 object WebSocketServer {
@@ -118,8 +124,8 @@ case class WebSocketServer(
     params: Stack.Params = this.params
   ): WebSocketServer = copy(stack, params)
 
-  def withTls(cfg: Netty3ListenerTLSConfig): WebSocketServer =
-    configured(Transport.TLSServerEngine(Some(cfg.newEngine)))
+  def withTls(config: SslServerConfiguration): WebSocketServer =
+    configured(Transport.ServerSsl(Some(config)))
 }
 
 object HttpWebSocket

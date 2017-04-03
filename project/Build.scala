@@ -3,12 +3,12 @@ import Keys._
 import scoverage.ScoverageSbtPlugin
 
 object FinagleWebsocket extends Build {
-  val libVersion = "6.35.0"
+  val libVersion = "6.43.0"
 
   val baseSettings = Defaults.defaultSettings ++ Seq(
     libraryDependencies ++= Seq(
       "com.twitter" %% "finagle-core" % libVersion,
-      "org.scalatest" %% "scalatest" % "2.2.5" % "test",
+      "org.scalatest" %% "scalatest" % "3.0.1" % "test",
       "junit" % "junit" % "4.12" % "test"
     )
   )
