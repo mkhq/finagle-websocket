@@ -79,7 +79,7 @@ class WebSocketHandler extends SimpleChannelHandler {
 
   override def channelClosed(ctx: ChannelHandlerContext, e: ChannelStateEvent) {
     super.channelClosed(ctx, e)
-    closer.setValue(())
+    closer.setDone()
   }
 }
 
