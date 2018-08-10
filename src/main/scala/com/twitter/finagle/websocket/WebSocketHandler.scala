@@ -16,7 +16,7 @@ class WebSocketHandler extends SimpleChannelHandler {
   protected[this] val binaryMessagesBroker = new Broker[Array[Byte]]
   protected[this] val pingsBroker = new Broker[Array[Byte]]
   protected[this] val closer = new Promise[Unit]
-  protected[this] val timer = DefaultTimer.twitter
+  protected[this] val timer = DefaultTimer
 
   private[this] class ListenerImpl(promise:Promise[Unit]) extends ChannelFutureListener {
     def operationComplete(cf: ChannelFuture) {

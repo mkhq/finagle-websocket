@@ -9,7 +9,7 @@ import com.twitter.finagle.server._
 import com.twitter.finagle.ssl.TrustCredentials
 import com.twitter.finagle.ssl.client.SslClientConfiguration
 import com.twitter.finagle.ssl.server.SslServerConfiguration
-import com.twitter.finagle.transport.Transport
+import com.twitter.finagle.transport.{LegacyContext, Transport, TransportContext}
 import com.twitter.concurrent.Offer
 import com.twitter.util.{Duration, Future}
 import java.net.{InetSocketAddress, SocketAddress, URI}
@@ -58,8 +58,9 @@ case class WebSocketClient(
 extends StdStackClient[WebSocket, WebSocket, WebSocketClient] {
   protected type In = WebSocket
   protected type Out = WebSocket
+  protected type Context = TransportContext
 
-  protected def newTransporter(addr: SocketAddress): Transporter[WebSocket, WebSocket] = {
+  protected def newTransporter(addr: SocketAddress): Transporter[WebSocket, WebSocket, TransportContext] = {
     val Label(label) = params[Label]
     val Stats(stats) = params[Stats]
     val codec = WebSocketCodec()
@@ -77,17 +78,15 @@ extends StdStackClient[WebSocket, WebSocket, WebSocketClient] {
     params: Stack.Params = this.params
   ): WebSocketClient = copy(stack, params)
 
-  protected def newDispatcher(transport: Transport[WebSocket, WebSocket]): Service[WebSocket, WebSocket] =
+  protected def newDispatcher(
+    transport: Transport[WebSocket, WebSocket] { type Context <: WebSocketClient.this.Context }
+  ): Service[WebSocket, WebSocket] = {
     new SerialClientDispatcher(transport)
+  }
 
   def withTlsWithoutValidation(): WebSocketClient =
     configured(Transport.ClientSsl(
       Some(SslClientConfiguration(trustCredentials = TrustCredentials.Insecure))))
-
-/*    configured(Transport.TLSClientEngine(Some({
-      case inet: InetSocketAddress => Ssl.clientWithoutCertificateValidation(inet.getHostName, inet.getPort)
-      case _ => Ssl.clientWithoutCertificateValidation()
-    }))) */
 }
 
 object WebSocketServer {
@@ -101,8 +100,9 @@ case class WebSocketServer(
 ) extends StdStackServer[WebSocket, WebSocket, WebSocketServer] {
   protected type In = WebSocket
   protected type Out = WebSocket
+  protected type Context = TransportContext
 
-  protected def newListener(): Listener[WebSocket, WebSocket] = {
+  protected def newListener(): Listener[WebSocket, WebSocket, TransportContext] = {
     val Label(label) = params[Label]
     val pipeline = WebSocketCodec()
       .server(ServerCodecConfig(label, new SocketAddress {}))
@@ -112,7 +112,7 @@ case class WebSocketServer(
   }
 
   protected def newDispatcher(
-    transport: Transport[WebSocket, WebSocket],
+    transport: Transport[WebSocket, WebSocket] { type Context <: WebSocketServer.this.Context },
     service: Service[WebSocket, WebSocket]) = {
     val Stats(stats) = params[Stats]
 
