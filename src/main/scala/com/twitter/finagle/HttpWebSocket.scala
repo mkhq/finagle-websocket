@@ -9,7 +9,7 @@ import com.twitter.finagle.server._
 import com.twitter.finagle.ssl.TrustCredentials
 import com.twitter.finagle.ssl.client.SslClientConfiguration
 import com.twitter.finagle.ssl.server.SslServerConfiguration
-import com.twitter.finagle.transport.{LegacyContext, Transport, TransportContext}
+import com.twitter.finagle.transport.{Transport, TransportContext}
 import com.twitter.concurrent.Offer
 import com.twitter.util.{Duration, Future}
 import java.net.{InetSocketAddress, SocketAddress, URI}
