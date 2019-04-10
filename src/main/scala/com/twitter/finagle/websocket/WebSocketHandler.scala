@@ -1,17 +1,20 @@
 package com.twitter.finagle.websocket
 
-import com.twitter.concurrent.{Offer, Broker}
+import com.twitter.concurrent.{Broker, Offer}
 import com.twitter.finagle.{CancelledRequestException, ChannelException}
 import com.twitter.finagle.util.DefaultTimer
-import com.twitter.util.{Future, Promise, Return, Throw, Try, TimerTask}
+import com.twitter.util.{Future, Promise, Return, Throw, TimerTask, Try}
 import java.net.URI
+
 import org.jboss.netty.buffer.ChannelBuffers
 import org.jboss.netty.channel._
 import org.jboss.netty.handler.codec.http.websocketx._
 import org.jboss.netty.handler.codec.http.{HttpHeaders, HttpRequest, HttpResponse}
+import org.jboss.netty.handler.timeout.{IdleStateAwareChannelHandler, IdleStateEvent}
+
 import scala.collection.JavaConversions._
 
-class WebSocketHandler extends SimpleChannelHandler {
+class WebSocketHandler extends IdleStateAwareChannelHandler {
   protected[this] val messagesBroker = new Broker[String]
   protected[this] val binaryMessagesBroker = new Broker[Array[Byte]]
   protected[this] val closer = new Promise[Unit]
@@ -79,6 +82,10 @@ class WebSocketHandler extends SimpleChannelHandler {
   override def channelClosed(ctx: ChannelHandlerContext, e: ChannelStateEvent) {
     super.channelClosed(ctx, e)
     closer.setValue(())
+  }
+
+  override def channelIdle(ctx: ChannelHandlerContext, e: IdleStateEvent): Unit = {
+    e.getChannel().close()
   }
 }
 
