@@ -8,13 +8,15 @@ import org.jboss.netty.util.HashedWheelTimer
 
 case class WebSocketCodec(sessionIdleTimeSeconds: Int = 0) extends CodecFactory[WebSocket, WebSocket] {
   def server = Function.const {
+    val timer =  new HashedWheelTimer()
+
     new Codec[WebSocket, WebSocket] {
       def pipelineFactory = new ChannelPipelineFactory {
         def getPipeline = {
           val pipeline = Channels.pipeline()
           pipeline.addLast("decoder", new HttpRequestDecoder)
           pipeline.addLast("encoder", new HttpResponseEncoder)
-          pipeline.addLast("idleStateHandler",  new IdleStateHandler(new HashedWheelTimer(), 0, 0, sessionIdleTimeSeconds))
+          pipeline.addLast("idleStateHandler",  new IdleStateHandler(timer, 0, 0, sessionIdleTimeSeconds))
           pipeline.addLast("handler", new WebSocketServerHandler)
           pipeline
         }
