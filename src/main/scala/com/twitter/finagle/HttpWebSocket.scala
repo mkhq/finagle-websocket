@@ -96,7 +96,8 @@ object WebSocketServer {
 
 case class WebSocketServer(
   stack: Stack[ServiceFactory[WebSocket, WebSocket]] = WebSocketServer.stack,
-  params: Stack.Params = StackServer.defaultParams + ProtocolLibrary("websocket")
+  params: Stack.Params = StackServer.defaultParams + ProtocolLibrary("websocket"),
+  sessionIdleTimeout: Int = 0
 ) extends StdStackServer[WebSocket, WebSocket, WebSocketServer] {
   protected type In = WebSocket
   protected type Out = WebSocket
@@ -104,7 +105,7 @@ case class WebSocketServer(
 
   protected def newListener(): Listener[WebSocket, WebSocket, TransportContext] = {
     val Label(label) = params[Label]
-    val pipeline = WebSocketCodec()
+    val pipeline = WebSocketCodec(sessionIdleTimeout)
       .server(ServerCodecConfig(label, new SocketAddress {}))
       .pipelineFactory
 
@@ -132,8 +133,12 @@ object HttpWebSocket
 extends Client[WebSocket, WebSocket]
 with Server[WebSocket, WebSocket]
 with WebSocketRichClient {
+  private def newServer(sessionIdleTimeout: Int): WebSocketServer =
+    WebSocketServer(sessionIdleTimeout = sessionIdleTimeout).configured(Label("websocket"))
+
   val client = WebSocketClient().configured(Label("websocket"))
   val server = WebSocketServer().configured(Label("websocket"))
+  val serverWithSessionIdle: Int => WebSocketServer = newServer
 
   def newClient(dest: Name, label: String) =
     client.newClient(dest, label)
