@@ -1,6 +1,6 @@
 package com.twitter.finagle.websocket
 
-import com.twitter.conversions.time._
+import com.twitter.conversions.DurationOps._
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.FunSuite
 import org.junit.runner.RunWith
