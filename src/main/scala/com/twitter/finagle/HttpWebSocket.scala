@@ -1,39 +1,37 @@
 package com.twitter.finagle
 
-import com.twitter.finagle.websocket.{WebSocket, WebSocketCodec}
+import java.net.{InetSocketAddress, SocketAddress, URI}
+
+import com.twitter.concurrent.Offer
 import com.twitter.finagle.client._
-import com.twitter.finagle.dispatch.{SerialServerDispatcher, SerialClientDispatcher}
-import com.twitter.finagle.netty3._
-import com.twitter.finagle.param.{ProtocolLibrary, Stats, Label}
+import com.twitter.finagle.dispatch.{SerialClientDispatcher, SerialServerDispatcher}
+import com.twitter.finagle.netty4.{Netty4Listener, Netty4Transporter}
+import com.twitter.finagle.param.{Label, ProtocolLibrary, Stats}
 import com.twitter.finagle.server._
 import com.twitter.finagle.ssl.TrustCredentials
 import com.twitter.finagle.ssl.client.SslClientConfiguration
 import com.twitter.finagle.ssl.server.SslServerConfiguration
 import com.twitter.finagle.transport.{Transport, TransportContext}
-import com.twitter.concurrent.Offer
+import com.twitter.finagle.websocket.{WebSocket, WebSocketClientPipelineFactory, WebSocketServerPipelineFactory}
 import com.twitter.util.{Duration, Future}
-import java.net.{InetSocketAddress, SocketAddress, URI}
-import org.jboss.netty.channel.Channel
 
 trait WebSocketRichClient { self: Client[WebSocket, WebSocket] =>
   def open(out: Offer[String], uri: String): Future[WebSocket] =
-    open(out, Offer.never, Offer.never, new URI(uri))
+    open(out, Offer.never, new URI(uri))
 
   def open(out: Offer[String], uri: URI): Future[WebSocket] =
-    open(out, Offer.never, Offer.never, uri)
+    open(out, Offer.never, uri)
 
   def open(out: Offer[String], binaryOut: Offer[Array[Byte]], uri: String): Future[WebSocket] =
-    open(out, binaryOut, Offer.never, new URI(uri))
+    open(out, binaryOut, new URI(uri))
 
   def open(out: Offer[String], binaryOut: Offer[Array[Byte]], uri: String, keepAlive: Option[Duration]): Future[WebSocket] =
-    open(out, binaryOut, Offer.never, new URI(uri), keepAlive = keepAlive)
+    open(out, binaryOut, new URI(uri), keepAlive = keepAlive)
 
-  def open(out: Offer[String], binaryOut: Offer[Array[Byte]], pingOut: Offer[Array[Byte]],
-    uri: URI, keepAlive: Option[Duration] = None): Future[WebSocket] = {
+  def open(out: Offer[String], binaryOut: Offer[Array[Byte]], uri: URI, keepAlive: Option[Duration] = None): Future[WebSocket] = {
     val socket = WebSocket(
       messages = out,
       binaryMessages = binaryOut,
-      pings = pingOut,
       uri = uri,
       keepAlive = keepAlive)
     val addr = uri.getHost + ":" + uri.getPort
@@ -60,17 +58,11 @@ extends StdStackClient[WebSocket, WebSocket, WebSocketClient] {
   protected type Out = WebSocket
   protected type Context = TransportContext
 
+
   protected def newTransporter(addr: SocketAddress): Transporter[WebSocket, WebSocket, TransportContext] = {
     val Label(label) = params[Label]
     val Stats(stats) = params[Stats]
-    val codec = WebSocketCodec()
-      .client(ClientCodecConfig(label))
-    val newTransport = (ch: Channel) => codec.newClientTransport(ch, stats)
-
-    Netty3Transporter(
-      codec.pipelineFactory,
-      addr,
-      params + Netty3Transporter.TransportFactory(newTransport))
+    Netty4Transporter.raw(WebSocketClientPipelineFactory, addr, params)
   }
 
   protected def copy1(
@@ -78,15 +70,19 @@ extends StdStackClient[WebSocket, WebSocket, WebSocketClient] {
     params: Stack.Params = this.params
   ): WebSocketClient = copy(stack, params)
 
-  protected def newDispatcher(
-    transport: Transport[WebSocket, WebSocket] { type Context <: WebSocketClient.this.Context }
-  ): Service[WebSocket, WebSocket] = {
+  protected def newDispatcher(transport: Transport[WebSocket, WebSocket] {type Context <: WebSocketClient.this.Context}): Service[WebSocket, WebSocket] =
     new SerialClientDispatcher(transport)
-  }
 
   def withTlsWithoutValidation(): WebSocketClient =
     configured(Transport.ClientSsl(
       Some(SslClientConfiguration(trustCredentials = TrustCredentials.Insecure))))
+
+//  def withTlsWithoutValidation(): WebSocketClient =
+//    configured(Transport.TLSClientEngine(Some({
+//      case inet: InetSocketAddress => Ssl.clientWithoutCertificateValidation(inet.getHostName, inet.getPort)
+//      case _ => Ssl.clientWithoutCertificateValidation()
+//    })))
+
 }
 
 object WebSocketServer {
@@ -105,11 +101,7 @@ case class WebSocketServer(
 
   protected def newListener(): Listener[WebSocket, WebSocket, TransportContext] = {
     val Label(label) = params[Label]
-    val pipeline = WebSocketCodec(sessionIdleTimeout)
-      .server(ServerCodecConfig(label, new SocketAddress {}))
-      .pipelineFactory
-
-    Netty3Listener(pipeline, params)
+    Netty4Listener(WebSocketServerPipelineFactory, params)
   }
 
   protected def newDispatcher(
@@ -125,8 +117,8 @@ case class WebSocketServer(
     params: Stack.Params = this.params
   ): WebSocketServer = copy(stack, params)
 
-  def withTls(config: SslServerConfiguration): WebSocketServer =
-    configured(Transport.ServerSsl(Some(config)))
+  def withTls(cfg: SslServerConfiguration): WebSocketServer =
+    configured(Transport.ServerSsl(Some(cfg)))
 }
 
 object HttpWebSocket

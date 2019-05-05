@@ -1,40 +1,22 @@
 package com.twitter.finagle.websocket
 
-import com.twitter.finagle.{Codec, CodecFactory}
-import org.jboss.netty.channel.{ChannelPipelineFactory, Channels}
-import org.jboss.netty.handler.codec.http._
-import org.jboss.netty.handler.timeout.IdleStateHandler
-import org.jboss.netty.util.HashedWheelTimer
+import io.netty.channel.ChannelPipeline
+import io.netty.handler.codec.http._
+import io.netty.handler.codec.http.websocketx.extensions.compression.WebSocketServerCompressionHandler
 
-case class WebSocketCodec(sessionIdleTimeSeconds: Int = 0) extends CodecFactory[WebSocket, WebSocket] {
-  def server = Function.const {
-    val timer =  new HashedWheelTimer()
-
-    new Codec[WebSocket, WebSocket] {
-      def pipelineFactory = new ChannelPipelineFactory {
-        def getPipeline = {
-          val pipeline = Channels.pipeline()
-          pipeline.addLast("decoder", new HttpRequestDecoder)
-          pipeline.addLast("encoder", new HttpResponseEncoder)
-          pipeline.addLast("idleStateHandler",  new IdleStateHandler(timer, 0, 0, sessionIdleTimeSeconds))
-          pipeline.addLast("handler", new WebSocketServerHandler)
-          pipeline
-        }
-      }
-    }
+object WebSocketServerPipelineFactory extends (ChannelPipeline => Unit) {
+  override def apply(pipeline: ChannelPipeline): Unit = {
+    pipeline.addLast("httpCodec", new HttpServerCodec)
+    pipeline.addLast("httpAggregator", new HttpObjectAggregator(65536))
+    pipeline.addLast("wsCompressor", new WebSocketServerCompressionHandler())
+    pipeline.addLast("handler", new WebSocketServerHandler)
   }
+}
 
-  def client = Function.const {
-    new Codec[WebSocket, WebSocket] {
-      def pipelineFactory = new ChannelPipelineFactory {
-        def getPipeline = {
-          val pipeline = Channels.pipeline()
-          pipeline.addLast("decoder", new HttpResponseDecoder)
-          pipeline.addLast("encoder", new HttpRequestEncoder)
-          pipeline.addLast("handler", new WebSocketClientHandler)
-          pipeline
-        }
-      }
-    }
+object WebSocketClientPipelineFactory extends (ChannelPipeline => Unit) {
+  override def apply(pipeline: ChannelPipeline): Unit = {
+    pipeline.addLast("httpCodec", new HttpClientCodec())
+    pipeline.addLast("httpAggregator", new HttpObjectAggregator(8192))
+    pipeline.addLast("handler", new WebSocketClientHandler)
   }
 }
