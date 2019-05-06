@@ -15,6 +15,7 @@ import io.netty.util.CharsetUtil
 class WebSocketHandler extends ChannelDuplexHandler {
   protected[this] val messagesBroker = new Broker[String]
   protected[this] val binaryMessagesBroker = new Broker[Array[Byte]]
+  protected[this] val pingsBroker = new Broker[Array[Byte]]
   protected[this] val closer = new Promise[Unit]
   protected[this] val timer = DefaultTimer.twitter
 
@@ -38,14 +39,12 @@ class WebSocketHandler extends ChannelDuplexHandler {
 
   protected[this] def channelFutureToOffer(future: ChannelFuture): Offer[Try[Unit]] = {
     val promise = new Promise[Unit]
-
     future.addListener(new ListenerImpl(promise))
-
     promise.toOffer
   }
 
 
-  protected[this] def writeX(ctx: ChannelHandlerContext, sock: WebSocket, promise: ChannelPromise, ack: Option[Offer[Try[Unit]]] = None): Unit = {
+  protected[this] def writeWebSocket(ctx: ChannelHandlerContext, sock: WebSocket, promise: ChannelPromise, ack: Option[Offer[Try[Unit]]] = None): Unit = {
     def close() {
       sock.close()
       if (ctx.channel.isOpen) ctx.channel.close()
@@ -54,7 +53,7 @@ class WebSocketHandler extends ChannelDuplexHandler {
     val awaitAck = ack match {
       case Some(ackOffer) =>
         ackOffer {
-          case Return(_) => writeX(ctx, sock, promise, None)
+          case Return(_) => writeWebSocket(ctx, sock, promise, None)
           case Throw(_) => close()
         }
 
@@ -63,15 +62,15 @@ class WebSocketHandler extends ChannelDuplexHandler {
           sock.messages {
             message =>
               val frame = new TextWebSocketFrame(message)
-              val writeFuture = ctx.channel.writeAndFlush(frame)
-              writeX(ctx, sock, promise, Some(channelFutureToOffer(writeFuture)))
+              val writeFuture = ctx.writeAndFlush(frame)
+              writeWebSocket(ctx, sock, promise, Some(channelFutureToOffer(writeFuture)))
 
           },
           sock.binaryMessages {
             binary =>
               val frame = new BinaryWebSocketFrame(Unpooled.copiedBuffer(binary))
-              val writeFuture = ctx.channel.writeAndFlush(frame)
-              writeX(ctx, sock, promise, Some(channelFutureToOffer(writeFuture)))
+              val writeFuture = ctx.writeAndFlush(frame)
+              writeWebSocket(ctx, sock, promise, Some(channelFutureToOffer(writeFuture)))
           })
 
     }
@@ -110,8 +109,8 @@ class WebSocketServerHandler extends WebSocketHandler {
               val webSocket = WebSocket(
                 messages = messagesBroker.recv,
                 binaryMessages = binaryMessagesBroker.recv,
+                pings = pingsBroker.recv,
                 uri = new URI(req.uri),
-                //      headers = req.headers.map(e => e.getKey -> e.getValue).toMap,
                 remoteAddress = ctx.channel.remoteAddress,
                 onClose = closer,
                 close = close)
@@ -132,7 +131,11 @@ class WebSocketServerHandler extends WebSocketHandler {
         }
 
       case frame: PingWebSocketFrame =>
-        ctx.channel.writeAndFlush(new PongWebSocketFrame(frame.content))
+        val frameContent = frame.content()
+        frameContent.retain()
+
+        pingsBroker ! toByteArray(frameContent)
+        ctx.writeAndFlush(new PongWebSocketFrame(frameContent))
 
       case frame: TextWebSocketFrame =>
         messagesBroker ! frame.text
@@ -140,20 +143,27 @@ class WebSocketServerHandler extends WebSocketHandler {
       case frame: BinaryWebSocketFrame =>
         binaryMessagesBroker ! toByteArray(frame.content)
 
-
       case invalid =>
         ctx.fireExceptionCaught(new IllegalArgumentException("invalid message \"%s\"".format(invalid)))
     }
   }
 
-
-  override def write(ctx: ChannelHandlerContext, e: AnyRef, promise: ChannelPromise) = {
+  override def write(ctx: ChannelHandlerContext, e: AnyRef, promise: ChannelPromise): Unit = {
     e match {
       case sock: WebSocket =>
-        writeX(ctx, sock, promise)
+        writeWebSocket(ctx, sock, promise)
 
-      case _ =>
-        super.write(ctx, e, promise)
+      case _: HttpResponse =>
+        ctx.write(e, promise)
+
+      case _: PongWebSocketFrame =>
+        ctx.write(e, promise)
+
+      case _: CloseWebSocketFrame =>
+        ctx.write(e, promise)
+
+      case invalid =>
+        ctx.fireExceptionCaught(new IllegalArgumentException("invalid message \"%s\"".format(invalid)))
     }
   }
 }
@@ -161,67 +171,84 @@ class WebSocketServerHandler extends WebSocketHandler {
 class WebSocketClientHandler extends WebSocketHandler {
 
   @volatile private[this] var handshaker: Option[WebSocketClientHandshaker] = None
-
   private[this] var keepAliveTask: Option[TimerTask] = None
 
+  private def replyClientImmediatly(ctx: ChannelHandlerContext, e: AnyRef, promise: ChannelPromise, sock: WebSocket) = {
+    def close() {
+      keepAliveTask.foreach(_.close())
+      ctx.channel().close()
+    }
+
+    val webSocket = sock.copy(
+      messages = messagesBroker.recv,
+      binaryMessages = binaryMessagesBroker.recv,
+      onClose = closer,
+      close = close)
+
+    ctx.fireChannelRead(webSocket)
+    promise.setSuccess()
+  }
+
+  private def createWebSocketHandshake(ctx: ChannelHandlerContext, sock: WebSocket) = {
+    def initiateKeepAlive(): Unit =
+      for (interval <- sock.keepAlive) {
+        keepAliveTask = Option(timer.schedule(interval) {
+          ctx.writeAndFlush(new PingWebSocketFrame())
+        })
+      }
+
+    val hs = WebSocketClientHandshakerFactory.newHandshaker(sock.uri, sock.version, null, false, new DefaultHttpHeaders())
+    handshaker = Some(hs)
+
+    hs.handshake(ctx.channel()).addListener(new ChannelFutureListener {
+      override def operationComplete(future: ChannelFuture): Unit = initiateKeepAlive
+    })
+  }
+
   override def channelRead(ctx:ChannelHandlerContext, msg: AnyRef):Unit = {
-    val ch = ctx.channel()
-    if(! handshaker.get.isHandshakeComplete){
-      handshaker.get.finishHandshake(ch, msg.asInstanceOf[FullHttpResponse])
-    } else {
+    if(! handshaker.get.isHandshakeComplete)
+      handshaker.get.finishHandshake(ctx.channel, msg.asInstanceOf[FullHttpResponse])
+    else
       msg match {
         case res:FullHttpResponse =>
           throw new IllegalStateException(s"ERROR: Unexpected FullHttpResponse (status=${res.status.code}, content=${res.content().toString(CharsetUtil.UTF_8)})")
 
-        case text:TextWebSocketFrame =>
+        case frame:CloseWebSocketFrame =>
+          ctx.channel.close()
 
-        case pong:PongWebSocketFrame =>
+        case frame:PongWebSocketFrame =>
         //          pongReceived = true
 
-        case ping:PingWebSocketFrame =>
-          ch.writeAndFlush(new PongWebSocketFrame(Unpooled.wrappedBuffer(Array[Byte](8,1,8,1))))
+        case frame:TextWebSocketFrame =>
+          messagesBroker ! frame.text
 
-        case close:CloseWebSocketFrame =>
-          ch.close()
+        case frame: BinaryWebSocketFrame =>
+          binaryMessagesBroker ! toByteArray(frame.content)
+
+        case invalid =>
+          ctx.fireExceptionCaught(new IllegalArgumentException("invalid message \"%s\"".format(invalid)))
+
       }
-    }
   }
 
-
-
-  override def write(ctx: ChannelHandlerContext, e: AnyRef, promise: ChannelPromise) = {
+  override def write(ctx: ChannelHandlerContext, e: AnyRef, promise: ChannelPromise): Unit = {
     e match {
       case sock: WebSocket =>
-        writeX(ctx, sock, promise)
+        writeWebSocket(ctx, sock, promise)
+        replyClientImmediatly(ctx, e, promise, sock)
+        createWebSocketHandshake(ctx, sock)
 
-        def close() {
-          keepAliveTask.foreach(_.close())
-          ctx.channel().close()
-        }
+      case _: HttpRequest =>
+        ctx.write(e, promise)
 
-        val webSocket = sock.copy(
-          messages = messagesBroker.recv,
-          binaryMessages = binaryMessagesBroker.recv,
-          onClose = closer,
-          close = close)
+      case _: CloseWebSocketFrame =>
+        ctx.write(e, promise)
 
+      case _: PingWebSocketFrame =>
+        ctx.write(e, promise)
 
-        ctx.fireChannelRead(e)
-        promise.setSuccess()
-
-
-        val hs = WebSocketClientHandshakerFactory.newHandshaker(sock.uri, WebSocketVersion.V13, null, false, new DefaultHttpHeaders())
-        handshaker = Some(hs)
-        hs.handshake(ctx.channel()).addListener(new ChannelFutureListener {
-          override def operationComplete(future: ChannelFuture): Unit = {
-
-          }
-        })
-
-
-      case _ => super.write(ctx, e, promise)
+      case invalid =>
+        ctx.fireExceptionCaught(new IllegalArgumentException("invalid message \"%s\"".format(invalid)))
     }
-
   }
-
 }
