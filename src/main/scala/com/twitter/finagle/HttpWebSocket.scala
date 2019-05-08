@@ -16,6 +16,7 @@ import com.twitter.finagle.websocket._
 import com.twitter.util.{Duration, Future}
 import io.netty.channel.ChannelPipeline
 import io.netty.handler.codec.http.{HttpClientCodec, HttpObjectAggregator, HttpServerCodec}
+import io.netty.handler.timeout.IdleStateHandler
 
 trait WebSocketRichClient { self: Client[WebSocket, WebSocket] =>
   def open(out: Offer[String], uri: String): Future[WebSocket] =
@@ -105,6 +106,7 @@ case class WebSocketServer(
     Netty4Listener((pipeline: ChannelPipeline) => {
       pipeline.addLast("httpCodec", new HttpServerCodec)
       pipeline.addLast("httpAggregator", new HttpObjectAggregator(65536))
+      pipeline.addLast("idleStateHandler",  new IdleStateHandler(0, 0, sessionIdleTimeout))
       pipeline.addLast("handler", new WebSocketServerHandler)
     }, params)
   }
@@ -130,8 +132,11 @@ object HttpWebSocket
 extends Client[WebSocket, WebSocket]
 with Server[WebSocket, WebSocket]
 with WebSocketRichClient {
+  private def newServer(sessionIdleTimeout: Int): WebSocketServer =
+    WebSocketServer(sessionIdleTimeout = sessionIdleTimeout).configured(Label("websocket"))
   val client = WebSocketClient().configured(Label("websocket"))
   val server = WebSocketServer().configured(Label("websocket"))
+  val serverWithSessionIdle: Int => WebSocketServer = newServer
 
   def newClient(dest: Name, label: String): ServiceFactory[WebSocket, WebSocket] =
     client.newClient(dest, label)

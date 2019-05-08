@@ -10,6 +10,7 @@ import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel._
 import io.netty.handler.codec.http._
 import io.netty.handler.codec.http.websocketx._
+import io.netty.handler.timeout.IdleStateEvent
 import io.netty.util.CharsetUtil
 
 class WebSocketHandler extends ChannelDuplexHandler {
@@ -78,6 +79,18 @@ class WebSocketHandler extends ChannelDuplexHandler {
     awaitAck.sync()
   }
 
+  override def close(ctx: ChannelHandlerContext, promise: ChannelPromise): Unit = {
+    super.close(ctx, promise)
+    closer.setDone()
+
+  }
+
+  override def userEventTriggered(ctx: ChannelHandlerContext, e: AnyRef): Unit = {
+    e match {
+      case _: IdleStateEvent => ctx.channel.close()
+      case _ => ctx.fireUserEventTriggered(e)
+    }
+  }
 }
 
 class WebSocketServerHandler extends WebSocketHandler {
