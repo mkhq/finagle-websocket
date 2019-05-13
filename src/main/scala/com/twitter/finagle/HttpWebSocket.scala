@@ -23,13 +23,14 @@ trait WebSocketRichClient { self: Client[WebSocket, WebSocket] =>
     open(out, Offer.never,  Offer.never, new URI(uri))
 
   def open(out: Offer[String], uri: URI): Future[WebSocket] =
-    open(out, Offer.never,  Offer.never, uri)
+    open(out, Offer.never, Offer.never, uri)
 
   def open(out: Offer[String], binaryOut: Offer[Array[Byte]], uri: String): Future[WebSocket] =
-    open(out, binaryOut,  Offer.never, new URI(uri))
+    open(out, binaryOut, Offer.never, new URI(uri))
 
-  def open(out: Offer[String], binaryOut: Offer[Array[Byte]], uri: String, keepAlive: Option[Duration]): Future[WebSocket] =
-    open(out, binaryOut,  Offer.never, new URI(uri), keepAlive = keepAlive)
+  def open(out: Offer[String], binaryOut: Offer[Array[Byte]], uri: String,
+           keepAlive: Option[Duration]): Future[WebSocket] =
+    open(out, binaryOut, Offer.never, new URI(uri), keepAlive = keepAlive)
 
   def open(out: Offer[String], binaryOut: Offer[Array[Byte]], pingOut: Offer[Array[Byte]],
            uri: URI, keepAlive: Option[Duration] = None): Future[WebSocket] = {
@@ -55,54 +56,47 @@ object WebSocketClient {
     StackClient.newStack
 }
 
-case class WebSocketClient(
-  stack: Stack[ServiceFactory[WebSocket, WebSocket]] = WebSocketClient.stack,
-  params: Stack.Params = StackClient.defaultParams + ProtocolLibrary("websocket"))
-extends StdStackClient[WebSocket, WebSocket, WebSocketClient] {
+case class WebSocketClient(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = WebSocketClient.stack,
+                           params: Stack.Params = StackClient.defaultParams + ProtocolLibrary("websocket"))
+  extends StdStackClient[WebSocket, WebSocket, WebSocketClient] {
   protected type In = WebSocket
   protected type Out = WebSocket
   protected type Context = TransportContext
 
-
   protected def newTransporter(addr: SocketAddress): Transporter[WebSocket, WebSocket, TransportContext] = {
-    val Label(label) = params[Label]
-    val Stats(stats) = params[Stats]
+    val Label(_) = params[Label]
+    val Stats(_) = params[Stats]
     Netty4Transporter.raw((pipeline: ChannelPipeline) => {
       pipeline.addLast("httpCodec", new HttpClientCodec())
-      pipeline.addLast("httpAggregator", new HttpObjectAggregator(8192))
+      pipeline.addLast("httpAggregator", new HttpObjectAggregator(65536))
       pipeline.addLast("handler", new WebSocketClientHandler)
     }, addr, params)
   }
 
-  protected def copy1(
-    stack: Stack[ServiceFactory[WebSocket, WebSocket]] = this.stack,
-    params: Stack.Params = this.params
-  ): WebSocketClient = copy(stack, params)
+  protected def copy1(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = this.stack,
+                      params: Stack.Params = this.params): WebSocketClient = copy(stack, params)
 
-  protected def newDispatcher(transport: Transport[WebSocket, WebSocket] {type Context <: WebSocketClient.this.Context}): Service[WebSocket, WebSocket] =
-    new SerialClientDispatcher(transport)
+  protected def newDispatcher(transport: Transport[WebSocket, WebSocket]
+    {type Context <: WebSocketClient.this.Context}): Service[WebSocket, WebSocket] = new SerialClientDispatcher(transport)
 
-  def withTlsWithoutValidation(): WebSocketClient =
-    configured(Transport.ClientSsl(
-      Some(SslClientConfiguration(trustCredentials = TrustCredentials.Insecure))))
+  def withTlsWithoutValidation(): WebSocketClient = configured(
+    Transport.ClientSsl(Some(SslClientConfiguration(trustCredentials = TrustCredentials.Insecure)))
+  )
 }
 
 object WebSocketServer {
-  val stack: Stack[ServiceFactory[WebSocket, WebSocket]] =
-    StackServer.newStack
+  val stack: Stack[ServiceFactory[WebSocket, WebSocket]] = StackServer.newStack
 }
 
-case class WebSocketServer(
-  stack: Stack[ServiceFactory[WebSocket, WebSocket]] = WebSocketServer.stack,
-  params: Stack.Params = StackServer.defaultParams + ProtocolLibrary("websocket"),
-  sessionIdleTimeout: Int = 0
-) extends StdStackServer[WebSocket, WebSocket, WebSocketServer] {
+case class WebSocketServer(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = WebSocketServer.stack,
+                           params: Stack.Params = StackServer.defaultParams + ProtocolLibrary("websocket"),
+                           sessionIdleTimeout: Int = 0) extends StdStackServer[WebSocket, WebSocket, WebSocketServer] {
   protected type In = WebSocket
   protected type Out = WebSocket
   protected type Context = TransportContext
 
   protected def newListener(): Listener[WebSocket, WebSocket, TransportContext] = {
-    val Label(label) = params[Label]
+    val Label(_) = params[Label]
     Netty4Listener((pipeline: ChannelPipeline) => {
       pipeline.addLast("httpCodec", new HttpServerCodec)
       pipeline.addLast("httpAggregator", new HttpObjectAggregator(65536))
@@ -111,21 +105,18 @@ case class WebSocketServer(
     }, params)
   }
 
-  protected def newDispatcher(
-    transport: Transport[WebSocket, WebSocket] { type Context <: WebSocketServer.this.Context },
-    service: Service[WebSocket, WebSocket]): SerialServerDispatcher[WebSocket, WebSocket] = {
-    val Stats(stats) = params[Stats]
 
+  protected def newDispatcher(transport: Transport[WebSocket, WebSocket] { type Context <: WebSocketServer.this.Context },
+                              service: Service[WebSocket, WebSocket]
+                             ): SerialServerDispatcher[WebSocket, WebSocket] = {
+    val Stats(_) = params[Stats]
     new SerialServerDispatcher(transport, service)
   }
 
-  protected def copy1(
-    stack: Stack[ServiceFactory[WebSocket, WebSocket]] = this.stack,
-    params: Stack.Params = this.params
-  ): WebSocketServer = copy(stack, params)
+  protected def copy1(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = this.stack,
+                      params: Stack.Params = this.params): WebSocketServer = copy(stack, params)
 
-  def withTls(config: SslServerConfiguration): WebSocketServer =
-    configured(Transport.ServerSsl(Some(config)))
+  def withTls(config: SslServerConfiguration): WebSocketServer = configured(Transport.ServerSsl(Some(config)))
 }
 
 object HttpWebSocket
@@ -134,8 +125,8 @@ with Server[WebSocket, WebSocket]
 with WebSocketRichClient {
   private def newServer(sessionIdleTimeout: Int): WebSocketServer =
     WebSocketServer(sessionIdleTimeout = sessionIdleTimeout).configured(Label("websocket"))
-  val client = WebSocketClient().configured(Label("websocket"))
-  val server = WebSocketServer().configured(Label("websocket"))
+  val client: WebSocketClient = WebSocketClient().configured(Label("websocket"))
+  val server: WebSocketServer = WebSocketServer().configured(Label("websocket"))
   val serverWithSessionIdle: Int => WebSocketServer = newServer
 
   def newClient(dest: Name, label: String): ServiceFactory[WebSocket, WebSocket] =
