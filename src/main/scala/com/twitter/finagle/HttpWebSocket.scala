@@ -8,14 +8,15 @@ import com.twitter.finagle.dispatch.{SerialClientDispatcher, SerialServerDispatc
 import com.twitter.finagle.netty4.{Netty4Listener, Netty4Transporter}
 import com.twitter.finagle.param.{Label, ProtocolLibrary, Stats}
 import com.twitter.finagle.server._
+import com.twitter.finagle.ssl.TrustCredentials
+import com.twitter.finagle.ssl.client.SslClientConfiguration
 import com.twitter.finagle.ssl.server.SslServerConfiguration
 import com.twitter.finagle.transport.{Transport, TransportContext}
 import com.twitter.finagle.websocket._
 import com.twitter.util.{Duration, Future}
 import io.netty.channel.ChannelPipeline
 import io.netty.handler.codec.http.{HttpClientCodec, HttpObjectAggregator, HttpServerCodec}
-import io.netty.handler.ssl.util.InsecureTrustManagerFactory
-import io.netty.handler.ssl.{SslContext, SslContextBuilder, SslHandler}
+import io.netty.handler.ssl.SslContext
 import io.netty.handler.timeout.IdleStateHandler
 
 trait WebSocketRichClient { self: Client[WebSocket, WebSocket] =>
@@ -78,11 +79,6 @@ case class WebSocketClient(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = 
     val Label(_) = params[Label]
     val Stats(_) = params[Stats]
     Netty4Transporter.raw((pipeline: ChannelPipeline) => {
-      params[SslContextHolder].sslCtx match {
-        case Some(s) =>
-          pipeline.addLast("sslHandler",new SslHandler(s.newEngine(pipeline.channel().alloc()), true))
-      }
-
       pipeline.addLast("httpCodec", new HttpClientCodec())
       pipeline.addLast("httpAggregator", new HttpObjectAggregator(65536))
       pipeline.addLast("handler", new WebSocketClientHandler)
@@ -96,7 +92,7 @@ case class WebSocketClient(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = 
     {type Context <: WebSocketClient.this.Context}): Service[WebSocket, WebSocket] = new SerialClientDispatcher(transport)
 
   def withTlsWithoutValidation(): WebSocketClient =
-    configured(SslContextHolder(Option(SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build())))
+    configured(Transport.ClientSsl(Some(SslClientConfiguration(trustCredentials = TrustCredentials.Insecure))))
 }
 
 object SessionIdleTimeout {

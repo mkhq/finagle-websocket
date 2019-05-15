@@ -193,40 +193,25 @@ class WebSocketClientHandler extends WebSocketHandler {
   private[this] var keepAliveTask: Option[TimerTask] = None
   private[this] var socket : Option[WebSocket] = None
 
-  private def makeHandshake(ctx: ChannelHandlerContext) = {
+  private def createClientHandshaker(ctx: ChannelHandlerContext, sock: WebSocket): WebSocketClientHandshaker =
+    WebSocketClientHandshakerFactory.newHandshaker(sock.uri, sock.version, null, false, new DefaultHttpHeaders())
+
+  private def makeHandshake(ctx: ChannelHandlerContext, h: WebSocketClientHandshaker, sock: WebSocket): ChannelFuture = {
     def initiateKeepAlive(): Unit =
-      if (socket.isDefined)
-        for (interval <- socket.get.keepAlive) {
-          keepAliveTask = Option(timer.schedule(interval) {
-            ctx.writeAndFlush(new PingWebSocketFrame())
-          })
-        }
-      else
-        new IllegalStateException("WebSocketClientHandshaker is not assigned with WebSocket")
-
-    handshaker match {
-      case None =>
-        new IllegalStateException("WebSocketClientHandshaker is not assigned with handsaker")
-      case Some(h) =>
-        h.handshake(ctx.channel).addListener(new ChannelFutureListener {
-          override def operationComplete(future: ChannelFuture): Unit = {
-            if (!future.isSuccess) {
-              ctx.fireExceptionCaught(future.cause())
-            }
-            initiateKeepAlive()
-          }
+      for (interval <- sock.keepAlive) {
+        keepAliveTask = Option(timer.schedule(interval) {
+          ctx.writeAndFlush(new PingWebSocketFrame())
         })
-    }
-  }
+      }
 
-  private def createClientHandshaker(sock: WebSocket): WebSocketClientHandshaker = {
-    def toHttpHeaders(headers: Map[String, String]): DefaultHttpHeaders = {
-      val httpHeaders = new DefaultHttpHeaders()
-      for ((k, v) <- headers) httpHeaders.add(k, v)
-      httpHeaders
-    }
-
-    WebSocketClientHandshakerFactory.newHandshaker(sock.uri, sock.version, null, false, toHttpHeaders(sock.headers))
+    h.handshake(ctx.channel).addListener(new ChannelFutureListener {
+      override def operationComplete(future: ChannelFuture): Unit = {
+        if (!future.isSuccess) {
+          ctx.fireExceptionCaught(future.cause())
+        }
+        initiateKeepAlive()
+      }
+    })
   }
 
   private def finishHandshakeAndTriggerWebSocketReceive(ctx: ChannelHandlerContext, res: FullHttpResponse, hs: WebSocketClientHandshaker, sock: WebSocket) = {
@@ -254,12 +239,7 @@ class WebSocketClientHandler extends WebSocketHandler {
       close = close)
   }
 
-  private def returnImmediatly(promise: ChannelPromise): ChannelPromise = promise.setSuccess()
-
-  override def channelActive(ctx: ChannelHandlerContext): Unit = {
-    super.channelActive(ctx)
-    makeHandshake(ctx)
-  }
+  private def returnImmediately(promise: ChannelPromise): ChannelPromise = promise.setSuccess()
 
   override def channelRead(ctx:ChannelHandlerContext, msg: AnyRef):Unit = {
     msg match {
@@ -286,13 +266,30 @@ class WebSocketClientHandler extends WebSocketHandler {
   override def write(ctx: ChannelHandlerContext, e: AnyRef, promise: ChannelPromise): Unit = {
     e match {
       case sock: WebSocket =>
-        handshaker = Some(createClientHandshaker(sock))
         socket = Some(copyWebSocket(ctx, promise, sock))
-        listenWebSocket(ctx, sock, promise)
-        returnImmediatly(promise)
+        handshaker = Some(createClientHandshaker(ctx, sock))
+        handshaker match {
+          case None =>
+            ctx.fireExceptionCaught(new IllegalArgumentException("invalid websocket message \"%s\"".format(sock)))
 
-      case _: HttpRequest =>
-        ctx.write(e, promise)
+          case Some(h) =>
+            makeHandshake(ctx, h, sock)
+        }
+
+        listenWebSocket(ctx, sock, promise)
+        returnImmediately(promise)
+
+      case httpRequest: HttpRequest =>
+        def updateHeaders(httpRequest: HttpRequest): HttpRequest = {
+          for {
+            sock <- socket
+            (k, v) <- sock.headers
+          } httpRequest.headers().add(k, v)
+
+          httpRequest
+        }
+
+        ctx.write(updateHeaders(httpRequest), promise)
 
       case _: CloseWebSocketFrame =>
         ctx.write(e, promise)
