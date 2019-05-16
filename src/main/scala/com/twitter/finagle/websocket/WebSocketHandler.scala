@@ -6,11 +6,12 @@ import com.twitter.concurrent.{Broker, Offer}
 import com.twitter.finagle.CancelledRequestException
 import com.twitter.finagle.util.DefaultTimer
 import com.twitter.util._
-import io.netty.buffer.{ByteBuf, Unpooled}
+import io.netty.buffer.{ByteBufUtil, Unpooled}
 import io.netty.channel._
 import io.netty.handler.codec.http._
 import io.netty.handler.codec.http.websocketx._
 import io.netty.handler.timeout.IdleStateEvent
+
 import scala.collection.JavaConverters._
 
 class WebSocketHandler extends ChannelDuplexHandler {
@@ -19,13 +20,6 @@ class WebSocketHandler extends ChannelDuplexHandler {
   protected[this] val pingsBroker = new Broker[Array[Byte]]
   protected[this] val closer = new Promise[Unit]
   protected[this] val timer = DefaultTimer.twitter
-
-  protected def toByteArray(buffer: ByteBuf): Array[Byte] = {
-    val array = new Array[Byte](buffer.readableBytes())
-    buffer.readBytes(array)
-    buffer.release()
-    array
-  }
 
   private[this] class ListenerImpl(promise:Promise[Unit]) extends ChannelFutureListener {
     def operationComplete(cf: ChannelFuture) {
@@ -154,14 +148,14 @@ class WebSocketServerHandler extends WebSocketHandler {
         val frameContent = frame.content()
         frameContent.retain()
 
-        pingsBroker ! toByteArray(frameContent)
+        pingsBroker ! ByteBufUtil.getBytes(frameContent)
         ctx.writeAndFlush(new PongWebSocketFrame(frameContent))
 
       case frame: TextWebSocketFrame =>
         messagesBroker ! frame.text
 
       case frame: BinaryWebSocketFrame =>
-        binaryMessagesBroker ! toByteArray(frame.content)
+        binaryMessagesBroker ! ByteBufUtil.getBytes(frame.content)
 
       case invalid =>
         ctx.fireExceptionCaught(new IllegalArgumentException("invalid message \"%s\"".format(invalid)))
@@ -256,7 +250,7 @@ class WebSocketClientHandler extends WebSocketHandler {
         messagesBroker ! frame.text
 
       case frame: BinaryWebSocketFrame =>
-        binaryMessagesBroker ! toByteArray(frame.content)
+        binaryMessagesBroker ! ByteBufUtil.getBytes(frame.content)
 
       case invalid =>
         ctx.fireExceptionCaught(new IllegalArgumentException("invalid message \"%s\"".format(invalid)))

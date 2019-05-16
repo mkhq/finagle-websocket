@@ -1,7 +1,5 @@
 package com.twitter.finagle.websocket
 
-import java.util.concurrent.TimeUnit
-
 import com.twitter.concurrent.Broker
 import com.twitter.conversions.DurationOps._
 import com.twitter.finagle.{HttpWebSocket, Service}
@@ -55,18 +53,5 @@ class EndToEndTest extends FunSuite {
     latch.within(1.second)
     assert(result === "11111")
     assert(binaryResult === ArrayBuffer(0x01, 0x01, 0x01, 0x01, 0x01))
-  }
-}
-
-
-class CountDownLatch(val initialCount: Int) {
-  val underlying = new java.util.concurrent.CountDownLatch(initialCount)
-  def count = underlying.getCount
-  def isZero = count == 0
-  def countDown() = underlying.countDown()
-  def await() = underlying.await()
-  def await(timeout: Duration) = underlying.await(timeout.inMillis, TimeUnit.MILLISECONDS)
-  def within(timeout: Duration) = await(timeout) || {
-    throw new TimeoutException(timeout.toString)
   }
 }

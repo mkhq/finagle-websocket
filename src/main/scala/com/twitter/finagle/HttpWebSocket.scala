@@ -52,16 +52,6 @@ trait WebSocketRichClient { self: Client[WebSocket, WebSocket] =>
   }
 }
 
-object SslContextHolder {
-  implicit val param: Stack.Param[SslContextHolder] =
-    Stack.Param(SslContextHolder())
-}
-
-case class SslContextHolder(sslCtx: Option[SslContext] = None) {
-  def mk(): (SslContextHolder, Stack.Param[SslContextHolder]) =
-    (this, SslContextHolder.param)
-}
-
 object WebSocketClient {
   protected var sslCtx: Option[SslContext] = None
   val stack: Stack[ServiceFactory[WebSocket, WebSocket]] =
@@ -76,8 +66,6 @@ case class WebSocketClient(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = 
   protected type Context = TransportContext
 
   protected def newTransporter(addr: SocketAddress): Transporter[WebSocket, WebSocket, TransportContext] = {
-    val Label(_) = params[Label]
-    val Stats(_) = params[Stats]
     Netty4Transporter.raw((pipeline: ChannelPipeline) => {
       pipeline.addLast("httpCodec", new HttpClientCodec())
       pipeline.addLast("httpAggregator", new HttpObjectAggregator(65536))
@@ -117,11 +105,13 @@ case class WebSocketServer(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = 
   protected type Context = TransportContext
 
   protected def newListener(): Listener[WebSocket, WebSocket, TransportContext] = {
-    val Label(_) = params[Label]
     Netty4Listener((pipeline: ChannelPipeline) => {
       pipeline.addLast("httpCodec", new HttpServerCodec)
       pipeline.addLast("httpAggregator", new HttpObjectAggregator(65536))
-      pipeline.addLast("idleStateHandler",  new IdleStateHandler(0, 0, params[SessionIdleTimeout].seconds))
+
+      if(params[SessionIdleTimeout].seconds > 0)
+        pipeline.addLast("idleStateHandler",  new IdleStateHandler(0, 0, params[SessionIdleTimeout].seconds))
+
       pipeline.addLast("handler", new WebSocketServerHandler)
     }, params)
   }
