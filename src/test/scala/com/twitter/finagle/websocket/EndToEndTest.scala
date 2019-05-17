@@ -1,12 +1,13 @@
 package com.twitter.finagle.websocket
 
-import com.twitter.conversions.DurationOps._
-import org.scalatest.junit.JUnitRunner
-import org.scalatest.FunSuite
-import org.junit.runner.RunWith
 import com.twitter.concurrent.Broker
+import com.twitter.conversions.DurationOps._
 import com.twitter.finagle.{HttpWebSocket, Service}
 import com.twitter.util._
+import org.junit.runner.RunWith
+import org.scalatest.FunSuite
+import org.scalatest.junit.JUnitRunner
+
 import scala.collection.mutable.ArrayBuffer
 
 @RunWith(classOf[JUnitRunner])
