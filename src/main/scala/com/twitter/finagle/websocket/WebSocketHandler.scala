@@ -240,13 +240,13 @@ class WebSocketClientHandler extends WebSocketHandler {
       case res: FullHttpResponse if handshaker.isDefined && socket.isDefined =>
         finishHandshakeAndTriggerWebSocketReceive(ctx, res, handshaker.get, socket.get)
 
-      case frame:CloseWebSocketFrame =>
+      case frame: CloseWebSocketFrame =>
         ctx.channel.close()
 
-      case frame:PongWebSocketFrame =>
-      //          pongReceived = true
+      case frame: PongWebSocketFrame =>
+      // Ack for the PingWebSocketFrame, do nothing
 
-      case frame:TextWebSocketFrame =>
+      case frame: TextWebSocketFrame =>
         messagesBroker ! frame.text
 
       case frame: BinaryWebSocketFrame =>
