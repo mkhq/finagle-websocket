@@ -3,7 +3,7 @@ import Keys._
 import scoverage.ScoverageSbtPlugin
 
 object FinagleWebsocket extends Build {
-  val libVersion = "19.1.0"
+  val libVersion = "19.4.0"
 
   val baseSettings = Defaults.defaultSettings ++ Seq(
     libraryDependencies ++= Seq(
