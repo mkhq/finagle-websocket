@@ -3,7 +3,6 @@ package com.twitter.finagle.websocket
 import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import com.twitter.concurrent.Broker
-import com.twitter.conversions.DurationOps._
 import com.twitter.finagle.{HttpWebSocket, Service}
 import com.twitter.util._
 import org.junit.runner.RunWith
