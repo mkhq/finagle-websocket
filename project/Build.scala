@@ -1,6 +1,5 @@
 import sbt._
 import Keys._
-import scoverage.ScoverageSbtPlugin
 
 object FinagleWebsocket extends Build {
   val libVersion = "19.5.1"
@@ -18,14 +17,8 @@ object FinagleWebsocket extends Build {
     organization := "com.github.finagle",
     version := libVersion,
     scalaVersion := "2.11.12",
-    crossScalaVersions := Seq("2.10.5", "2.11.12"),
-    scalacOptions ++= Seq("-deprecation", "-feature"),
-    ScoverageSbtPlugin.ScoverageKeys.coverageHighlighting := (
-      CrossVersion.partialVersion(scalaVersion.value) match {
-        case Some((2, 10)) => false
-        case _ => true
-      }
-    )
+    crossScalaVersions := Seq("2.11.12", "2.12.8"),
+    scalacOptions ++= Seq("-deprecation", "-feature")
   )
 
   lazy val publishSettings = Seq(
