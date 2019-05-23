@@ -1,5 +1,7 @@
 package com.twitter.finagle.websocket
 
+import java.util.concurrent.{CountDownLatch, TimeUnit}
+
 import com.twitter.concurrent.Broker
 import com.twitter.conversions.DurationOps._
 import com.twitter.finagle.{HttpWebSocket, Service}
@@ -50,7 +52,7 @@ class EndToEndTest extends FunSuite {
       FuturePool.unboundedPool { binaryBrocker !! Array[Byte](0x01) }
     }
 
-    latch.within(1.second)
+    latch.await(1, TimeUnit.SECONDS)
     assert(result === "11111")
     assert(binaryResult === ArrayBuffer(0x01, 0x01, 0x01, 0x01, 0x01))
   }
