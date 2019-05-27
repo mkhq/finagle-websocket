@@ -11,6 +11,7 @@ import io.netty.channel._
 import io.netty.handler.codec.http._
 import io.netty.handler.codec.http.websocketx._
 import io.netty.handler.timeout.IdleStateEvent
+import io.netty.util.ReferenceCountUtil
 
 import scala.collection.JavaConverters._
 
@@ -119,9 +120,9 @@ class WebSocketServerHandler extends WebSocketHandler {
   }
 
   override def channelRead(ctx: ChannelHandlerContext, msg: AnyRef): Unit = {
-    msg match {
-      case req: FullHttpRequest =>
-        try {
+    try {
+      msg match {
+        case req: FullHttpRequest =>
           handshaker = Option(createServerHandshaker(req))
           handshaker match {
             case None =>
@@ -131,35 +132,33 @@ class WebSocketServerHandler extends WebSocketHandler {
               makeHandshake(ctx, req, h)
               triggerWebSocketReceive(ctx, req)
           }
-        } finally {
-          req.release
-        }
 
-      case frame: CloseWebSocketFrame =>
-        handshaker match {
-          case None =>
-            ctx.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE)
-          case Some(h) =>
-            frame.retain()
-            h.close(ctx.channel, frame)
-        }
+        case frame: CloseWebSocketFrame =>
+          handshaker match {
+            case None =>
+              ctx.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(ChannelFutureListener.CLOSE)
+            case Some(h) =>
+              frame.retain()
+              h.close(ctx.channel, frame)
+          }
 
-      case frame: PingWebSocketFrame =>
-        val frameContent = frame.content()
-        frameContent.retain()
+        case frame: PingWebSocketFrame =>
+          val frameContent = frame.content()
+          frameContent.retain()
 
-        pingsBroker ! ByteBufUtil.getBytes(frameContent)
-        ctx.writeAndFlush(new PongWebSocketFrame(frameContent))
+          pingsBroker ! ByteBufUtil.getBytes(frameContent)
+          ctx.writeAndFlush(new PongWebSocketFrame(frameContent))
 
-      case frame: TextWebSocketFrame =>
-        messagesBroker ! frame.text
+        case frame: TextWebSocketFrame =>
+          messagesBroker ! frame.text
 
-      case frame: BinaryWebSocketFrame =>
-        binaryMessagesBroker ! ByteBufUtil.getBytes(frame.content)
+        case frame: BinaryWebSocketFrame =>
+          binaryMessagesBroker ! ByteBufUtil.getBytes(frame.content)
 
-      case invalid =>
-        ctx.fireExceptionCaught(new IllegalArgumentException("invalid message \"%s\"".format(invalid)))
-    }
+        case invalid =>
+          ctx.fireExceptionCaught(new IllegalArgumentException("invalid message \"%s\"".format(invalid)))
+      }
+    } finally ReferenceCountUtil.release(msg)
   }
 
   override def write(ctx: ChannelHandlerContext, msg: AnyRef, promise: ChannelPromise): Unit = {
@@ -209,13 +208,9 @@ class WebSocketClientHandler extends WebSocketHandler {
   }
 
   private def finishHandshakeAndTriggerWebSocketReceive(ctx: ChannelHandlerContext, res: FullHttpResponse, hs: WebSocketClientHandshaker, sock: WebSocket) = {
-    try {
-      if (!hs.isHandshakeComplete) {
-        hs.finishHandshake(ctx.channel, res)
-        ctx.fireChannelRead(sock)
-      }
-    } finally {
-      res.release
+    if (!hs.isHandshakeComplete) {
+      hs.finishHandshake(ctx.channel, res)
+      ctx.fireChannelRead(sock)
     }
   }
 
@@ -236,25 +231,27 @@ class WebSocketClientHandler extends WebSocketHandler {
   private def returnImmediately(promise: ChannelPromise): ChannelPromise = promise.setSuccess()
 
   override def channelRead(ctx:ChannelHandlerContext, msg: AnyRef):Unit = {
-    msg match {
-      case res: FullHttpResponse if handshaker.isDefined && socket.isDefined =>
-        finishHandshakeAndTriggerWebSocketReceive(ctx, res, handshaker.get, socket.get)
+    try {
+      msg match {
+        case res: FullHttpResponse if handshaker.isDefined && socket.isDefined =>
+          finishHandshakeAndTriggerWebSocketReceive(ctx, res, handshaker.get, socket.get)
 
-      case frame: CloseWebSocketFrame =>
-        ctx.channel.close()
+        case frame: CloseWebSocketFrame =>
+          ctx.channel.close()
 
-      case frame: PongWebSocketFrame =>
-      // Ack for the PingWebSocketFrame, do nothing
+        case frame: PongWebSocketFrame =>
+        // Ack for the PingWebSocketFrame, do nothing
 
-      case frame: TextWebSocketFrame =>
-        messagesBroker ! frame.text
+        case frame: TextWebSocketFrame =>
+          messagesBroker ! frame.text
 
-      case frame: BinaryWebSocketFrame =>
-        binaryMessagesBroker ! ByteBufUtil.getBytes(frame.content)
+        case frame: BinaryWebSocketFrame =>
+          binaryMessagesBroker ! ByteBufUtil.getBytes(frame.content)
 
-      case invalid =>
-        ctx.fireExceptionCaught(new IllegalArgumentException("invalid message \"%s\"".format(invalid)))
-    }
+        case invalid =>
+          ctx.fireExceptionCaught(new IllegalArgumentException("invalid message \"%s\"".format(invalid)))
+      }
+    } finally ReferenceCountUtil.release(msg)
   }
 
   override def write(ctx: ChannelHandlerContext, e: AnyRef, promise: ChannelPromise): Unit = {
