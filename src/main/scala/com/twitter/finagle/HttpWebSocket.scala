@@ -52,6 +52,17 @@ trait WebSocketRichClient { self: Client[WebSocket, WebSocket] =>
   }
 }
 
+object MaxAggContentLength {
+  val DefaultMaxContentLengthBytes = 65536
+  implicit val param: Stack.Param[MaxAggContentLength] =
+    Stack.Param(MaxAggContentLength(DefaultMaxContentLengthBytes))
+}
+
+case class MaxAggContentLength(maxContentLengthBytes: Int) {
+  def mk(): (MaxAggContentLength, Stack.Param[MaxAggContentLength]) =
+    (this, MaxAggContentLength.param)
+}
+
 object WebSocketClient {
   protected var sslCtx: Option[SslContext] = None
   val stack: Stack[ServiceFactory[WebSocket, WebSocket]] =
@@ -68,7 +79,7 @@ case class WebSocketClient(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = 
   protected def newTransporter(addr: SocketAddress): Transporter[WebSocket, WebSocket, TransportContext] = {
     Netty4Transporter.raw((pipeline: ChannelPipeline) => {
       pipeline.addLast("httpCodec", new HttpClientCodec())
-      pipeline.addLast("httpAggregator", new HttpObjectAggregator(65536))
+      pipeline.addLast("httpAggregator", new HttpObjectAggregator(params[MaxAggContentLength].maxContentLengthBytes))
       pipeline.addLast("handler", new WebSocketClientHandler)
     }, addr, params)
   }
@@ -107,7 +118,7 @@ case class WebSocketServer(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = 
   protected def newListener(): Listener[WebSocket, WebSocket, TransportContext] = {
     Netty4Listener((pipeline: ChannelPipeline) => {
       pipeline.addLast("httpCodec", new HttpServerCodec)
-      pipeline.addLast("httpAggregator", new HttpObjectAggregator(65536))
+      pipeline.addLast("httpAggregator", new HttpObjectAggregator(params[MaxAggContentLength].maxContentLengthBytes))
 
       if(params[SessionIdleTimeout].seconds > 0)
         pipeline.addLast("idleStateHandler",  new IdleStateHandler(0, 0, params[SessionIdleTimeout].seconds))
