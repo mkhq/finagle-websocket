@@ -140,6 +140,8 @@ case class WebSocketServer(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = 
   def withTls(config: SslServerConfiguration): WebSocketServer = configured(Transport.ServerSsl(Some(config)))
 
   def withSessionIdleTimeout(seconds: Int): WebSocketServer = configured(SessionIdleTimeout(seconds))
+
+  def withMaxAggContentLength(maxContentLengthBytes: Int): WebSocketServer = configured(MaxAggContentLength(maxContentLengthBytes))
 }
 
 object HttpWebSocket
