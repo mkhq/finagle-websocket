@@ -93,7 +93,7 @@ case class WebSocketClient(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = 
   def withTlsWithoutValidation(): WebSocketClient =
     configured(Transport.ClientSsl(Some(SslClientConfiguration(trustCredentials = TrustCredentials.Insecure))))
 
-  def withMaxAggContentLength(maxContentLengthBytes: Int): WebSocketClient = configured(MaxContentLength(maxContentLengthBytes))
+  def withMaxContentLength(maxContentLengthBytes: Int): WebSocketClient = configured(MaxContentLength(maxContentLengthBytes))
 }
 
 object SessionIdleTimeout {
@@ -143,7 +143,7 @@ case class WebSocketServer(stack: Stack[ServiceFactory[WebSocket, WebSocket]] = 
 
   def withSessionIdleTimeout(seconds: Int): WebSocketServer = configured(SessionIdleTimeout(seconds))
 
-  def withMaxAggContentLength(maxContentLengthBytes: Int): WebSocketServer = configured(MaxContentLength(maxContentLengthBytes))
+  def withMaxContentLength(maxContentLengthBytes: Int): WebSocketServer = configured(MaxContentLength(maxContentLengthBytes))
 }
 
 object HttpWebSocket
