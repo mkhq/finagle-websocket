@@ -3,7 +3,7 @@ package com.twitter.finagle.websocket
 import java.net.URI
 
 import com.twitter.concurrent.{Broker, Offer}
-import com.twitter.finagle.CancelledRequestException
+import com.twitter.finagle.{CancelledRequestException, MaxContentLength}
 import com.twitter.finagle.util.DefaultTimer
 import com.twitter.util._
 import io.netty.buffer.{ByteBufUtil, Unpooled}
@@ -84,13 +84,13 @@ class WebSocketHandler extends ChannelDuplexHandler {
   }
 }
 
-class WebSocketServerHandler extends WebSocketHandler {
+class WebSocketServerHandler(maxFramePayloadLength: Int = MaxContentLength.DefaultMaxLengthBytes) extends WebSocketHandler {
   private[this] var handshaker: Option[WebSocketServerHandshaker] = None
 
   private def createServerHandshaker(req: FullHttpRequest): WebSocketServerHandshaker = {
     val scheme = if (req.getUri.startsWith("wss")) "wss" else "ws"
     val location = scheme + "://" + req.headers.get(HttpHeaders.Names.HOST) + "/"
-    val wsFactory = new WebSocketServerHandshakerFactory(location, null, false)
+    val wsFactory = new WebSocketServerHandshakerFactory(location, null, false, maxFramePayloadLength)
     wsFactory.newHandshaker(req)
   }
 
@@ -181,13 +181,13 @@ class WebSocketServerHandler extends WebSocketHandler {
   }
 }
 
-class WebSocketClientHandler extends WebSocketHandler {
+class WebSocketClientHandler(maxFramePayloadLength: Int = MaxContentLength.DefaultMaxLengthBytes) extends WebSocketHandler {
   @volatile private[this] var handshaker: Option[WebSocketClientHandshaker] = None
   private[this] var keepAliveTask: Option[TimerTask] = None
   private[this] var socket : Option[WebSocket] = None
 
   private def createClientHandshaker(ctx: ChannelHandlerContext, sock: WebSocket): WebSocketClientHandshaker =
-    WebSocketClientHandshakerFactory.newHandshaker(sock.uri, sock.version, null, false, new DefaultHttpHeaders())
+    WebSocketClientHandshakerFactory.newHandshaker(sock.uri, sock.version, null, false, new DefaultHttpHeaders(), maxFramePayloadLength)
 
   private def makeHandshake(ctx: ChannelHandlerContext, h: WebSocketClientHandshaker, sock: WebSocket): ChannelFuture = {
     def initiateKeepAlive(): Unit =
